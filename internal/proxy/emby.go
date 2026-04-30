@@ -274,6 +274,15 @@ func (p *EmbyProxy) handleProxyStream(w http.ResponseWriter, r *http.Request) {
 	}
 	proxyReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
+	// 转发客户端的请求头（Range, Accept 等）
+	for k, vv := range r.Header {
+		for _, v := range vv {
+			if k != "Range" && k != "User-Agent" && k != "Host" && k != "Accept-Encoding" {
+				proxyReq.Header.Add(k, v)
+			}
+		}
+	}
+
 	log.Printf("proxy stream: %s range=%s", mediaURL, r.Header.Get("Range"))
 
 	proxyResp, err := p.sClient.Do(proxyReq)
@@ -287,11 +296,18 @@ func (p *EmbyProxy) handleProxyStream(w http.ResponseWriter, r *http.Request) {
 	log.Printf("proxy stream: response status=%d content-type=%s content-length=%d",
 		proxyResp.StatusCode, proxyResp.Header.Get("Content-Type"), proxyResp.ContentLength)
 
-	// 安全复制上游响应头
+	// 安全复制上游响应头（不含 Transfer-Encoding 和 Connection，由 Go 自动管理）
 	for k, vv := range proxyResp.Header {
 		for _, v := range vv {
-			w.Header().Add(k, v)
+			if k != "Transfer-Encoding" && k != "Connection" {
+				w.Header().Add(k, v)
+			}
 		}
+	}
+
+	// 确保 Content-Length 正确设置
+	if proxyResp.ContentLength > 0 {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", proxyResp.ContentLength))
 	}
 
 	// 设置 CORS 头，覆盖上游值
