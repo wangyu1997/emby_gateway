@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -232,10 +233,17 @@ func (p *EmbyProxy) handleProxyStream(w http.ResponseWriter, r *http.Request) {
 
 func (p *EmbyProxy) handlePlaying(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		// 记录播放开始
 		clientIP := extractClientIP(r)
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			p.forwardToEmby(w, r)
+			return
+		}
+		// 恢复 Body 供后续转发使用
+		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
 		var body map[string]interface{}
-		json.NewDecoder(r.Body).Decode(&body)
+		json.Unmarshal(bodyBytes, &body)
 		if item, ok := body["Item"]; ok {
 			if itemMap, ok := item.(map[string]interface{}); ok {
 				itemID, _ := itemMap["Id"].(string)
@@ -248,10 +256,10 @@ func (p *EmbyProxy) handlePlaying(w http.ResponseWriter, r *http.Request) {
 					t.Started = time.Now().Format("15:04:05")
 				} else {
 					p.trackers[trackKey] = &ClientTracker{
-						IP:      clientIP,
-						ItemID:  itemID,
+						IP:       clientIP,
+						ItemID:   itemID,
 						ItemName: itemName,
-						Started: time.Now().Format("15:04:05"),
+						Started:  time.Now().Format("15:04:05"),
 					}
 				}
 				p.trackersMu.Unlock()
