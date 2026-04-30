@@ -77,6 +77,10 @@ func (p *EmbyProxy) RemoveTracker(key string) {
 	p.trackersMu.Unlock()
 }
 
+func (p *EmbyProxy) FlushCache() {
+	p.pCache.Flush()
+}
+
 func (p *EmbyProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(r.URL.Path, "/PlaybackInfo") {
 		p.handlePlaybackInfo(w, r)

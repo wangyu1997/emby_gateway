@@ -143,6 +143,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		*s.cfg = newCfg
 		s.cfgMu.Unlock()
 
+		// 清除 PlaybackInfo 缓存，使新策略立即生效
+		s.proxy.FlushCache()
+
 		writeJSON(w, map[string]string{"message": "配置已保存"})
 
 	default:

@@ -74,3 +74,9 @@ func (c *Cache) Len() int {
 	defer c.mu.RUnlock()
 	return len(c.items)
 }
+
+func (c *Cache) Flush() {
+	c.mu.Lock()
+	c.items = make(map[string]Item)
+	c.mu.Unlock()
+}
