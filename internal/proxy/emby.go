@@ -82,6 +82,16 @@ func (p *EmbyProxy) FlushCache() {
 }
 
 func (p *EmbyProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// 处理 CORS 预检请求
+	if r.Method == http.MethodOptions && strings.HasPrefix(r.URL.Path, "/proxy/stream/") {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Range, Content-Type")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Content-Type, Accept-Ranges")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	if strings.Contains(r.URL.Path, "/PlaybackInfo") {
 		p.handlePlaybackInfo(w, r)
 		return
@@ -132,6 +142,7 @@ func (p *EmbyProxy) handlePlaybackInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	forwardReq.Header = r.Header.Clone()
+	forwardReq.ContentLength = r.ContentLength
 
 	resp, err := p.client.Do(forwardReq)
 	if err != nil {
@@ -217,6 +228,7 @@ func (p *EmbyProxy) handleProxyStream(w http.ResponseWriter, r *http.Request) {
 	encoded := strings.TrimPrefix(r.URL.Path, "/proxy/stream/")
 	rawURL, err := base64.URLEncoding.DecodeString(encoded)
 	if err != nil {
+		log.Printf("proxy stream: decode error: %v", err)
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
@@ -224,12 +236,14 @@ func (p *EmbyProxy) handleProxyStream(w http.ResponseWriter, r *http.Request) {
 
 	token := r.URL.Query().Get("token")
 	if !p.validateToken(mediaURL, token) {
+		log.Printf("proxy stream: token invalid")
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
 	proxyReq, err := http.NewRequest("GET", mediaURL, nil)
 	if err != nil {
+		log.Printf("proxy stream: create request error: %v", err)
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 		return
 	}
@@ -237,14 +251,20 @@ func (p *EmbyProxy) handleProxyStream(w http.ResponseWriter, r *http.Request) {
 	if rng := r.Header.Get("Range"); rng != "" {
 		proxyReq.Header.Set("Range", rng)
 	}
-	proxyReq.Header.Set("User-Agent", "Mozilla/5.0")
+	proxyReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+	log.Printf("proxy stream: %s range=%s", mediaURL, r.Header.Get("Range"))
 
 	proxyResp, err := p.streamClient().Do(proxyReq)
 	if err != nil {
+		log.Printf("proxy stream: request error: %v", err)
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 		return
 	}
 	defer proxyResp.Body.Close()
+
+	log.Printf("proxy stream: response status=%d content-type=%s content-length=%d",
+		proxyResp.StatusCode, proxyResp.Header.Get("Content-Type"), proxyResp.ContentLength)
 
 	// 先复制上游响应头，再设置 CORS 头（确保不被覆盖）
 	for k, v := range proxyResp.Header {
