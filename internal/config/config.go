@@ -2,43 +2,42 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"emby302/internal/db"
 )
 
 type Config struct {
-	Server  ServerConfig  `yaml:"server" json:"server"`
-	Admin   AdminConfig   `yaml:"admin" json:"admin"`
-	Emby    EmbyConfig    `yaml:"emby" json:"emby"`
-	GeoIP   GeoIPConfig   `yaml:"geoip" json:"geoip"`
-	Routing RoutingConfig `yaml:"routing" json:"routing"`
+	Server  ServerConfig  `json:"server"`
+	Admin   AdminConfig   `json:"admin"`
+	Emby    EmbyConfig    `json:"emby"`
+	GeoIP   GeoIPConfig   `json:"geoip"`
+	Routing RoutingConfig `json:"routing"`
 }
 
 type AdminConfig struct {
-	Username string `yaml:"username" json:"username"`
-	Password string `yaml:"password" json:"password"`
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 type ServerConfig struct {
-	Port      int    `yaml:"port" json:"port"`
-	AdminPort int    `yaml:"admin_port" json:"admin_port"`
-	Secret    string `yaml:"secret" json:"secret"`
+	Port      int    `json:"port"`
+	AdminPort int    `json:"admin_port"`
+	Secret    string `json:"secret"`
 }
 
 type EmbyConfig struct {
-	URL    string `yaml:"url" json:"url"`
-	APIKey string `yaml:"api_key" json:"api_key"`
+	URL    string `json:"url"`
+	APIKey string `json:"api_key"`
 }
 
 type GeoIPConfig struct {
-	DBPath         string `yaml:"db_path" json:"db_path"`
-	ServerCity     string `yaml:"server_city" json:"server_city"`
-	AutoDownload   bool   `yaml:"auto_download" json:"auto_download"`
-	AutoUpdate     string `yaml:"auto_update" json:"auto_update"`
-	APIFallbackURL string `yaml:"api_fallback_url" json:"api_fallback_url"`
-	IPCacheTTL     string `yaml:"ip_cache_ttl" json:"ip_cache_ttl"`
+	DBPath         string `json:"db_path"`
+	ServerCity     string `json:"server_city"`
+	AutoDownload   bool   `json:"auto_download"`
+	AutoUpdate     string `json:"auto_update"`
+	APIFallbackURL string `json:"api_fallback_url"`
+	IPCacheTTL     string `json:"ip_cache_ttl"`
 }
 
 func (g *GeoIPConfig) AutoUpdateDuration() time.Duration {
@@ -55,38 +54,32 @@ func (g *GeoIPConfig) IPCacheTTLDuration() time.Duration {
 }
 
 type RoutingConfig struct {
-	SameCity      string `yaml:"same_city" json:"same_city"`
-	DifferentCity string `yaml:"different_city" json:"different_city"`
-	Fallback      string `yaml:"fallback" json:"fallback"`
+	SameCity      string `json:"same_city"`
+	DifferentCity string `json:"different_city"`
+	Fallback      string `json:"fallback"`
 }
 
-func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+const configKey = "main"
+
+func Load(s *db.Store) (*Config, error) {
+	cfg := defaultConfig()
+	err := s.GetConfig(configKey, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("read config: %w", err)
+		return nil, fmt.Errorf("load config: %w", err)
 	}
+	return cfg, nil
+}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse config: %w", err)
-	}
+func Save(s *db.Store, cfg *Config) error {
+	return s.SetConfig(configKey, cfg)
+}
 
-	// defaults
-	if cfg.Server.Port == 0 {
-		cfg.Server.Port = 8095
+func defaultConfig() *Config {
+	return &Config{
+		Server:  ServerConfig{Port: 8095, AdminPort: 8098, Secret: "change-me-to-a-random-secret"},
+		Admin:   AdminConfig{Username: "admin", Password: "admin"},
+		Emby:    EmbyConfig{URL: "http://127.0.0.1:8096", APIKey: ""},
+		GeoIP:   GeoIPConfig{DBPath: "./GeoLite2-City.mmdb", ServerCity: "北京", AutoDownload: true, AutoUpdate: "24h", IPCacheTTL: "1h"},
+		Routing: RoutingConfig{SameCity: "redirect", DifferentCity: "proxy", Fallback: "proxy"},
 	}
-	if cfg.Server.AdminPort == 0 {
-		cfg.Server.AdminPort = 8098
-	}
-	if cfg.Routing.SameCity == "" {
-		cfg.Routing.SameCity = "redirect"
-	}
-	if cfg.Routing.DifferentCity == "" {
-		cfg.Routing.DifferentCity = "proxy"
-	}
-	if cfg.Routing.Fallback == "" {
-		cfg.Routing.Fallback = "proxy"
-	}
-
-	return &cfg, nil
 }

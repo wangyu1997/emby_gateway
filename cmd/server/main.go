@@ -11,35 +11,47 @@ import (
 
 	"emby302/internal/admin"
 	"emby302/internal/config"
+	"emby302/internal/db"
 	"emby302/internal/geoip"
 	"emby302/internal/proxy"
 )
 
 func main() {
-	dataDir := flag.String("data-dir", ".", "数据目录，存放配置文件和GeoIP数据库")
+	dataDir := flag.String("data-dir", ".", "数据目录，存放数据库文件和GeoIP数据库")
 	flag.Parse()
 
-	cfgPath := filepath.Join(*dataDir, "config.yaml")
-	ensureDefaultConfig(cfgPath)
-
-	cfg, err := config.Load(cfgPath)
+	dbPath := filepath.Join(*dataDir, "config.db")
+	store, err := db.New(dbPath)
 	if err != nil {
-		log.Fatalf("加载配置失败: %v", err)
+		log.Fatalf("打开数据库失败: %v", err)
+	}
+	defer store.Close()
+
+	cfg, err := config.Load(store)
+	if err != nil {
+		// 首次使用，初始化默认配置
+		cfg = &config.Config{
+			Server:  config.ServerConfig{Port: 8095, AdminPort: 8098, Secret: "change-me-to-a-random-secret"},
+			Admin:   config.AdminConfig{Username: "admin", Password: "admin"},
+			Emby:    config.EmbyConfig{URL: "http://127.0.0.1:8096"},
+			GeoIP:   config.GeoIPConfig{DBPath: "./GeoLite2-City.mmdb", ServerCity: "北京", AutoDownload: true, AutoUpdate: "24h", IPCacheTTL: "1h"},
+			Routing: config.RoutingConfig{SameCity: "redirect", DifferentCity: "proxy", Fallback: "proxy"},
+		}
+		config.Save(store, cfg)
+		log.Println("已初始化默认配置")
 	}
 
-	autoDownload := cfg.GeoIP.AutoDownload
 	updateInterval := cfg.GeoIP.AutoUpdateDuration()
 	ipCacheTTL := cfg.GeoIP.IPCacheTTLDuration()
 
-	dbPath := cfg.GeoIP.DBPath
-	if !filepath.IsAbs(dbPath) {
-		dbPath = filepath.Join(*dataDir, dbPath)
+	geoPath := cfg.GeoIP.DBPath
+	if !filepath.IsAbs(geoPath) {
+		geoPath = filepath.Join(*dataDir, geoPath)
 	}
 
-	g, err := geoip.New(dbPath, cfg.GeoIP.ServerCity, autoDownload, updateInterval, ipCacheTTL)
+	g, err := geoip.New(geoPath, cfg.GeoIP.ServerCity, cfg.GeoIP.AutoDownload, updateInterval, ipCacheTTL)
 	if err != nil {
-		log.Printf("初始化 GeoIP 失败: %v（代理将继续启动，GeoIP 将使用兜底策略）", err)
-		// GeoIP 失败不影响代理启动
+		log.Printf("初始化 GeoIP 失败: %v（代理将继续启动）", err)
 		g = nil
 	} else {
 		defer g.Close()
@@ -50,7 +62,6 @@ func main() {
 		log.Printf("GeoIP API 备用已启用: %s", cfg.GeoIP.APIFallbackURL)
 	}
 
-	// 缓存统计日志
 	if g != nil {
 		go func() {
 			ticker := time.NewTicker(5 * time.Minute)
@@ -76,7 +87,7 @@ func main() {
 	}()
 
 	// 启动管理后台
-	adminSrv := admin.New(cfg, cfgPath, g, p, cfg.Admin.Username, cfg.Admin.Password)
+	adminSrv := admin.New(cfg, store, g, p)
 	if err := adminSrv.ListenAndServe(cfg.Server.AdminPort); err != nil {
 		log.Fatalf("管理后台启动失败: %v", err)
 	}
