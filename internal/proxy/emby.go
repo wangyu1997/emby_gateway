@@ -552,6 +552,8 @@ func baseURL(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
+	} else if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
 	}
 	return scheme + "://" + r.Host
 }
