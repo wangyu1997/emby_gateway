@@ -45,9 +45,11 @@ type ClientTracker struct {
 
 func New(cfg *config.Config, g *geoip.GeoIP) *EmbyProxy {
 	return &EmbyProxy{
-		cfg:      cfg,
-		geoip:    g,
-		client:   &http.Client{Timeout: 60 * time.Second},
+		cfg:    cfg,
+		geoip:  g,
+		client: &http.Client{Timeout: 60 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // 不自动跟随重定向，透传给浏览器
+		}},
 		pCache:   cache.New(5*time.Minute, 10*time.Minute),
 		trackers: make(map[string]*ClientTracker),
 	}
