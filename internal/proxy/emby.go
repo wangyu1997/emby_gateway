@@ -23,10 +23,11 @@ import (
 )
 
 type EmbyProxy struct {
-	cfg    *config.Config
-	geoip  *geoip.GeoIP
-	client *http.Client // 用于 Emby 转发（不跟随重定向）
-	pCache *cache.Cache
+	cfg       *config.Config
+	geoip     *geoip.GeoIP
+	client    *http.Client // 用于 Emby 转发（不跟随重定向）
+	sClient   *http.Client // 用于代理流（跟随重定向，连接池复用）
+	pCache    *cache.Cache
 
 	// 客户端连接追踪
 	trackersMu sync.Mutex
@@ -51,14 +52,34 @@ func New(cfg *config.Config, g *geoip.GeoIP) *EmbyProxy {
 		client: &http.Client{Timeout: 60 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		}},
+		sClient: &http.Client{
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 20,
+				IdleConnTimeout:     90 * time.Second,
+				ResponseHeaderTimeout: 30 * time.Second, // 只限制响应头等待时间
+				DialContext: (&net.Dialer{
+					Timeout:   10 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+			},
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				// 重定向时保留 Range 头
+				if len(via) > 0 {
+					rng := via[0].Header.Get("Range")
+					if rng != "" {
+						req.Header.Set("Range", rng)
+					}
+				}
+				if len(via) >= 10 {
+					return fmt.Errorf("stopped after 10 redirects")
+				}
+				return nil
+			},
+		},
 		pCache:   cache.New(5*time.Minute, 10*time.Minute),
 		trackers: make(map[string]*ClientTracker),
 	}
-}
-
-// streamClient 用于代理流，自动跟随重定向
-func (p *EmbyProxy) streamClient() *http.Client {
-	return &http.Client{Timeout: 60 * time.Second}
 }
 
 func (p *EmbyProxy) GetTrackers() []ClientTracker {
@@ -255,7 +276,7 @@ func (p *EmbyProxy) handleProxyStream(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("proxy stream: %s range=%s", mediaURL, r.Header.Get("Range"))
 
-	proxyResp, err := p.streamClient().Do(proxyReq)
+	proxyResp, err := p.sClient.Do(proxyReq)
 	if err != nil {
 		log.Printf("proxy stream: request error: %v", err)
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
@@ -266,12 +287,14 @@ func (p *EmbyProxy) handleProxyStream(w http.ResponseWriter, r *http.Request) {
 	log.Printf("proxy stream: response status=%d content-type=%s content-length=%d",
 		proxyResp.StatusCode, proxyResp.Header.Get("Content-Type"), proxyResp.ContentLength)
 
-	// 先复制上游响应头，再设置 CORS 头（确保不被覆盖）
-	for k, v := range proxyResp.Header {
-		w.Header()[k] = v
+	// 安全复制上游响应头
+	for k, vv := range proxyResp.Header {
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
 	}
 
-	// 设置 CORS 头，允许浏览器跨域播放
+	// 设置 CORS 头，覆盖上游值
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Range, Content-Type")
@@ -279,7 +302,10 @@ func (p *EmbyProxy) handleProxyStream(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(proxyResp.StatusCode)
 
-	io.Copy(w, proxyResp.Body)
+	_, err = io.Copy(w, proxyResp.Body)
+	if err != nil {
+		log.Printf("proxy stream: copy error: %v", err)
+	}
 }
 
 func (p *EmbyProxy) handlePlaying(w http.ResponseWriter, r *http.Request) {
