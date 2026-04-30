@@ -149,6 +149,15 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	if s.geoip == nil {
+		writeJSON(w, map[string]interface{}{
+			"cache_hits":   0,
+			"cache_misses": 0,
+			"cache_size":   0,
+			"cache_rate":   "0.0",
+		})
+		return
+	}
 	hits, misses, size := s.geoip.Stats()
 	total := hits + misses
 	rate := 0.0

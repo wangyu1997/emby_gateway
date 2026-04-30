@@ -22,8 +22,9 @@ import (
 
 // Download URLs for GeoLite2-City (free mirrors, no license needed)
 var downloadURLs = []string{
-	"https://raw.githubusercontent.com/PrxyHunter/GeoLite2/master/GeoLite2-City.mmdb",
-	"https://mirror.ghproxy.com/https://github.com/PrxyHunter/GeoLite2/raw/master/GeoLite2-City.mmdb",
+	"https://github.com/P3TERX/GeoLite.mmdb/releases/download/GeoLite2-City/GeoLite2-City.mmdb",
+	"https://github.com/wp-statistics/GeoLite2-City/raw/master/GeoLite2-City.mmdb",
+	"https://cdn.jsdelivr.net/gh/P3TERX/GeoLite.mmdb/GeoLite2-City.mmdb",
 }
 
 type GeoIP struct {
@@ -73,7 +74,7 @@ func New(dbPath, serverCity string, autoDownload bool, updateInterval time.Durat
 	g := &GeoIP{
 		dbPath:     dbPath,
 		serverCity: serverCity,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: &http.Client{Timeout: 120 * time.Second},
 		ipCache:    cache.New(cacheTTL, cacheTTL*2),
 		cacheTTL:   cacheTTL,
 	}
@@ -81,19 +82,19 @@ func New(dbPath, serverCity string, autoDownload bool, updateInterval time.Durat
 	// Try to open existing db
 	if _, err := os.Stat(dbPath); err == nil {
 		if err := g.openDB(); err != nil {
-			log.Printf("打开现有 GeoIP 数据库失败: %v，尝试重新下载", err)
+			log.Printf("打开现有 GeoIP 数据库失败: %v", err)
 			if autoDownload {
 				if err := g.download(); err != nil {
-					return nil, fmt.Errorf("geoip db corrupt and download failed: %w", err)
+					log.Printf("GeoIP 数据库重新下载失败: %v，将使用兜底策略", err)
+					return g, nil // 返回 g，不报错，GeoIP 查询走 fallback
 				}
 			}
 		}
 	} else if autoDownload {
 		if err := g.download(); err != nil {
-			return nil, fmt.Errorf("download geoip db: %w", err)
+			log.Printf("GeoIP 数据库下载失败: %v，将使用兜底策略", err)
+			return g, nil // 返回 g，不报错
 		}
-	} else {
-		return nil, fmt.Errorf("geoip db not found at %s and auto-download disabled", dbPath)
 	}
 
 	// Start periodic update

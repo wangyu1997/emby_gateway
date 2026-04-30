@@ -37,28 +37,34 @@ func main() {
 
 	g, err := geoip.New(dbPath, cfg.GeoIP.ServerCity, autoDownload, updateInterval, cfg.GeoIP.IPCacheTTL)
 	if err != nil {
-		log.Fatalf("初始化 GeoIP 失败: %v", err)
+		log.Printf("初始化 GeoIP 失败: %v（代理将继续启动，GeoIP 将使用兜底策略）", err)
+		// GeoIP 失败不影响代理启动
+		g = nil
+	} else {
+		defer g.Close()
 	}
-	defer g.Close()
 
-	if cfg.GeoIP.APIFallbackURL != "" {
+	if g != nil && cfg.GeoIP.APIFallbackURL != "" {
 		g.SetAPI(cfg.GeoIP.APIFallbackURL)
 		log.Printf("GeoIP API 备用已启用: %s", cfg.GeoIP.APIFallbackURL)
 	}
 
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			hits, misses, size := g.Stats()
-			total := hits + misses
-			rate := float64(0)
-			if total > 0 {
-				rate = float64(hits) / float64(total) * 100
+	// 缓存统计日志
+	if g != nil {
+		go func() {
+			ticker := time.NewTicker(5 * time.Minute)
+			defer ticker.Stop()
+			for range ticker.C {
+				hits, misses, size := g.Stats()
+				total := hits + misses
+				rate := float64(0)
+				if total > 0 {
+					rate = float64(hits) / float64(total) * 100
+				}
+				log.Printf("GeoIP 缓存统计: 命中=%d 未命中=%d 命中率=%.1f%% 缓存数=%d", hits, misses, rate, size)
 			}
-			log.Printf("GeoIP 缓存统计: 命中=%d 未命中=%d 命中率=%.1f%% 缓存数=%d", hits, misses, rate, size)
-		}
-	}()
+		}()
+	}
 
 	// 启动代理服务
 	p := proxy.New(cfg, g)

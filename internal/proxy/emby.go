@@ -292,6 +292,10 @@ func (p *EmbyProxy) makeRoutingDecision(r *http.Request, clientIP string) *routi
 		return &routingDecision{clientIP: clientIP, strategy: p.cfg.Routing.Fallback}
 	}
 
+	if p.geoip == nil {
+		return &routingDecision{clientIP: clientIP, strategy: p.cfg.Routing.Fallback}
+	}
+
 	city, province, _, err := p.geoip.LookupCity(ip)
 	if err != nil {
 		return &routingDecision{clientIP: clientIP, strategy: p.cfg.Routing.Fallback}
