@@ -1,10 +1,10 @@
 services:
   emby302:
-    image: ghcr.io/${GITHUB_REPOSITORY:-emby302/emby302}:latest
+    image: emby302/emby302:latest
     restart: unless-stopped
     ports:
-      - "8095:8095"   # 代理服务端口
-      - "8098:8098"   # 管理后台端口
+      - "8095:8095"
+      - "8098:8098"
     volumes:
       - ./data:/data
     environment:
