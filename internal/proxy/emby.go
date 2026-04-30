@@ -98,6 +98,12 @@ func (p *EmbyProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 拦截 HTML 页面，注入自定义样式
+	if strings.HasSuffix(r.URL.Path, "/web/index.html") || strings.HasSuffix(r.URL.Path, "/web/") {
+		p.handleWebPage(w, r)
+		return
+	}
+
 	p.forwardToEmby(w, r)
 }
 
@@ -335,6 +341,76 @@ func (p *EmbyProxy) forwardToEmby(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+}
+
+func (p *EmbyProxy) handleWebPage(w http.ResponseWriter, r *http.Request) {
+	p.forwardToEmbyBuffered(w, r, func(body []byte) []byte {
+		if !p.cfg.Tweaks.HidePremiere {
+			return body
+		}
+		inject := `<style>
+.btnPremiere,[class*="btnPremiere"],[data-id="premiere"],.card-premiere,.section-premiere,
+[class*="card-premiere"],[class*="section-premiere"],.dashboardFooter,
+a[href*="premiere"],.btn-emby-premiere,.promo-card-premiere,
+.section-promo,.card-promo,[class*="promo"]{display:none!important}
+</style>`
+		return bytes.ReplaceAll(body, []byte("</head>"), append([]byte(inject), []byte("</head>")...))
+	})
+}
+
+func (p *EmbyProxy) forwardToEmbyBuffered(w http.ResponseWriter, r *http.Request, transform func([]byte) []byte) {
+	embyURL := p.cfg.Emby.URL + r.URL.Path
+	if r.URL.RawQuery != "" {
+		embyURL += "?" + r.URL.RawQuery
+	}
+
+	forwardReq, err := http.NewRequest(r.Method, embyURL, r.Body)
+	if err != nil {
+		http.Error(w, "Bad Gateway", http.StatusBadGateway)
+		return
+	}
+	forwardReq.Header = r.Header.Clone()
+
+	if forwardReq.ContentLength <= 0 && r.ContentLength > 0 {
+		forwardReq.ContentLength = r.ContentLength
+	}
+
+	if r.Method == http.MethodPost {
+		ct := forwardReq.Header.Get("Content-Type")
+		if ct == "" || strings.HasPrefix(ct, "text/plain") {
+			forwardReq.Header.Set("Content-Type", "application/json")
+		}
+	}
+
+	embyHost := strings.TrimPrefix(p.cfg.Emby.URL, "http://")
+	embyHost = strings.TrimPrefix(embyHost, "https://")
+	forwardReq.Host = embyHost
+
+	forwardReq.Header.Set("X-Forwarded-For", extractClientIP(r))
+	forwardReq.Header.Set("X-Forwarded-Proto", scheme(r))
+	forwardReq.Header.Set("X-Forwarded-Host", r.Host)
+
+	resp, err := p.client.Do(forwardReq)
+	if err != nil {
+		http.Error(w, "Bad Gateway", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	for k, v := range resp.Header {
+		w.Header()[k] = v
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
+		return
+	}
+
+	respBody = transform(respBody)
+	w.WriteHeader(resp.StatusCode)
+	w.Write(respBody)
 }
 
 func scheme(r *http.Request) string {

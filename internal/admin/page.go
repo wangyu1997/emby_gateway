@@ -133,6 +133,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </div>
   </div>
 
+  <div class="card">
+    <div class="card-header"><div class="icon">🎨</div><div><h2>界面优化</h2><span>隐藏 Emby 网页端推广元素</span></div></div>
+    <div class="form-grid">
+      <div class="form-group full"><label><input type="checkbox" id="tweaks_hide_premiere" style="margin-right:8px">隐藏网页端 "获取 Emby Premiere" 按钮和 "发现 Emby Premiere" 卡片</label></div>
+    </div>
+  </div>
+
   <div class="actions">
     <button class="btn btn-secondary" onclick="loadConfig()">重置</button>
     <button class="btn btn-primary" onclick="saveConfig()">保存配置</button>
@@ -184,6 +191,7 @@ async function loadConfig() {
     V('routing_same_city', c.routing?.same_city || 'redirect');
     V('routing_different_city', c.routing?.different_city || 'proxy');
     V('routing_fallback', c.routing?.fallback || 'proxy');
+    var cb = document.getElementById('tweaks_hide_premiere'); if(cb) cb.checked = c.tweaks?.hide_premiere || false;
   } catch(e) { toast('加载失败', true); }
 }
 
@@ -195,7 +203,8 @@ async function saveConfig() {
     admin: { username: document.getElementById('admin_username').value, password: document.getElementById('admin_password').value },
     emby: { url: document.getElementById('emby_url').value, api_key: document.getElementById('emby_api_key').value },
     geoip: { db_path: document.getElementById('geoip_db_path').value, server_city: document.getElementById('geoip_server_city').value, auto_download: document.getElementById('geoip_auto_download').value==='true', auto_update: document.getElementById('geoip_auto_update').value, ip_cache_ttl: document.getElementById('geoip_ip_cache_ttl').value, api_fallback_url: document.getElementById('geoip_api_fallback_url').value },
-    routing: { same_city: document.getElementById('routing_same_city').value, different_city: document.getElementById('routing_different_city').value, fallback: document.getElementById('routing_fallback').value }
+    routing: { same_city: document.getElementById('routing_same_city').value, different_city: document.getElementById('routing_different_city').value, fallback: document.getElementById('routing_fallback').value },
+    tweaks: { hide_premiere: document.getElementById('tweaks_hide_premiere').checked }
   };
   try {
     const r = await fetch('/api/config', { method: 'POST', headers: headers(), body: JSON.stringify(cfg) });

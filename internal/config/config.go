@@ -13,6 +13,7 @@ type Config struct {
 	Emby    EmbyConfig    `json:"emby"`
 	GeoIP   GeoIPConfig   `json:"geoip"`
 	Routing RoutingConfig `json:"routing"`
+	Tweaks  TweakConfig   `json:"tweaks"`
 }
 
 type AdminConfig struct {
@@ -59,6 +60,10 @@ type RoutingConfig struct {
 	Fallback      string `json:"fallback"`
 }
 
+type TweakConfig struct {
+	HidePremiere bool `json:"hide_premiere"`
+}
+
 const configKey = "main"
 
 func Load(s *db.Store) (*Config, error) {
@@ -81,5 +86,6 @@ func defaultConfig() *Config {
 		Emby:    EmbyConfig{URL: "http://127.0.0.1:8096", APIKey: ""},
 		GeoIP:   GeoIPConfig{DBPath: "./GeoLite2-City.mmdb", ServerCity: "北京", AutoDownload: true, AutoUpdate: "24h", IPCacheTTL: "1h"},
 		Routing: RoutingConfig{SameCity: "redirect", DifferentCity: "proxy", Fallback: "proxy"},
+		Tweaks:  TweakConfig{HidePremiere: false},
 	}
 }
