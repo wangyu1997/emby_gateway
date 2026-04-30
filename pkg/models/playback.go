@@ -8,6 +8,7 @@ type PlaybackInfoResponse struct {
 type MediaSource struct {
 	ID              string        `json:"Id"`
 	Path            string        `json:"Path"`
+	Protocol        string        `json:"Protocol,omitempty"`
 	DirectStreamURL string        `json:"DirectStreamUrl,omitempty"`
 	DirectPlayURL   string        `json:"DirectPlayUrl,omitempty"`
 	Container       string        `json:"Container,omitempty"`

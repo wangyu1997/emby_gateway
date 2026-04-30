@@ -145,17 +145,25 @@ func (p *EmbyProxy) handlePlaybackInfo(w http.ResponseWriter, r *http.Request) {
 
 	for i := range playback.MediaSources {
 		source := &playback.MediaSources[i]
-		// Path 就是 STRM 文件中的原始 URL
 		mediaURL := source.Path
 		if mediaURL == "" {
 			continue
 		}
 
+		// 判断是否为 STRM 文件：Protocol="Http" 表示远程流，Path 为 http URL 也是 STRM
+		isSTRM := source.Protocol == "Http" || isHTTPURL(mediaURL)
+		if !isSTRM {
+			// 本地视频：Emby 的 DirectStreamUrl 会指向 /videos/{id}/stream，自然走代理转发
+			// 不做任何修改，交由 Emby 正常处理
+			continue
+		}
+
+		// STRM 视频：根据 IP 策略决定路由
 		if decision.strategy == "redirect" {
-			// 同城：直接返回原始 URL，客户端直连网盘 CDN
+			// 同城：返回 CDN 直链，客户端直接访问
 			source.DirectStreamURL = mediaURL
 		} else {
-			// 异地：替换为本地代理 URL
+			// 异地：替换为本地代理 URL，流量经服务器中转
 			token := p.generateToken(mediaURL)
 			encoded := base64.URLEncoding.EncodeToString([]byte(mediaURL))
 			source.DirectStreamURL = fmt.Sprintf(
@@ -374,4 +382,8 @@ func baseURL(r *http.Request) string {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host
+}
+
+func isHTTPURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
