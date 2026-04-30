@@ -8,12 +8,13 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 
 	"emby302/internal/config"
 	"emby302/internal/geoip"
 	"emby302/internal/proxy"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Server struct {
@@ -177,34 +178,68 @@ func (s *Server) handleTrackers(w http.ResponseWriter, r *http.Request) {
 }
 
 func saveConfig(path string, cfg *config.Config) error {
-	yamlData := toYAML(cfg)
-	return os.WriteFile(path, yamlData, 0644)
+	data, err := yamlMarshal(cfg)
+	if err != nil {
+		return fmt.Errorf("serialize config: %w", err)
+	}
+	return os.WriteFile(path, data, 0644)
 }
 
-func toYAML(cfg *config.Config) []byte {
-	var b strings.Builder
-	b.WriteString("server:\n")
-	b.WriteString(fmt.Sprintf("  port: %d\n", cfg.Server.Port))
-	b.WriteString(fmt.Sprintf("  admin_port: %d\n", cfg.Server.AdminPort))
-	b.WriteString(fmt.Sprintf("  secret: \"%s\"\n", cfg.Server.Secret))
-	b.WriteString("\nadmin:\n")
-	b.WriteString(fmt.Sprintf("  username: \"%s\"\n", cfg.Admin.Username))
-	b.WriteString(fmt.Sprintf("  password: \"%s\"\n", cfg.Admin.Password))
-	b.WriteString("\nemby:\n")
-	b.WriteString(fmt.Sprintf("  url: \"%s\"\n", cfg.Emby.URL))
-	b.WriteString(fmt.Sprintf("  api_key: \"%s\"\n", cfg.Emby.APIKey))
-	b.WriteString("\ngeoip:\n")
-	b.WriteString(fmt.Sprintf("  db_path: \"%s\"\n", cfg.GeoIP.DBPath))
-	b.WriteString(fmt.Sprintf("  server_city: \"%s\"\n", cfg.GeoIP.ServerCity))
-	b.WriteString(fmt.Sprintf("  auto_download: %t\n", cfg.GeoIP.AutoDownload))
-	b.WriteString(fmt.Sprintf("  auto_update: \"%s\"\n", cfg.GeoIP.AutoUpdate))
-	b.WriteString(fmt.Sprintf("  api_fallback_url: \"%s\"\n", cfg.GeoIP.APIFallbackURL))
-	b.WriteString(fmt.Sprintf("  ip_cache_ttl: \"%s\"\n", cfg.GeoIP.IPCacheTTL))
-	b.WriteString("\nrouting:\n")
-	b.WriteString(fmt.Sprintf("  same_city: \"%s\"\n", cfg.Routing.SameCity))
-	b.WriteString(fmt.Sprintf("  different_city: \"%s\"\n", cfg.Routing.DifferentCity))
-	b.WriteString(fmt.Sprintf("  fallback: \"%s\"\n", cfg.Routing.Fallback))
-	return []byte(b.String())
+type yamlConfig struct {
+	Server  yamlServer  `yaml:"server"`
+	Admin   yamlAdmin   `yaml:"admin"`
+	Emby    yamlEmby    `yaml:"emby"`
+	GeoIP   yamlGeoIP   `yaml:"geoip"`
+	Routing yamlRouting `yaml:"routing"`
+}
+
+type yamlServer struct {
+	Port      int    `yaml:"port"`
+	AdminPort int    `yaml:"admin_port"`
+	Secret    string `yaml:"secret"`
+}
+type yamlAdmin struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+}
+type yamlEmby struct {
+	URL    string `yaml:"url"`
+	APIKey string `yaml:"api_key"`
+}
+type yamlGeoIP struct {
+	DBPath         string `yaml:"db_path"`
+	ServerCity     string `yaml:"server_city"`
+	AutoDownload   bool   `yaml:"auto_download"`
+	AutoUpdate     string `yaml:"auto_update"`
+	APIFallbackURL string `yaml:"api_fallback_url"`
+	IPCacheTTL     string `yaml:"ip_cache_ttl"`
+}
+type yamlRouting struct {
+	SameCity      string `yaml:"same_city"`
+	DifferentCity string `yaml:"different_city"`
+	Fallback      string `yaml:"fallback"`
+}
+
+func yamlMarshal(cfg *config.Config) ([]byte, error) {
+	y := yamlConfig{
+		Server:  yamlServer{Port: cfg.Server.Port, AdminPort: cfg.Server.AdminPort, Secret: cfg.Server.Secret},
+		Admin:   yamlAdmin{Username: cfg.Admin.Username, Password: cfg.Admin.Password},
+		Emby:    yamlEmby{URL: cfg.Emby.URL, APIKey: cfg.Emby.APIKey},
+		GeoIP: yamlGeoIP{
+			DBPath:         cfg.GeoIP.DBPath,
+			ServerCity:     cfg.GeoIP.ServerCity,
+			AutoDownload:   cfg.GeoIP.AutoDownload,
+			AutoUpdate:     cfg.GeoIP.AutoUpdate.String(),
+			APIFallbackURL: cfg.GeoIP.APIFallbackURL,
+			IPCacheTTL:     cfg.GeoIP.IPCacheTTL.String(),
+		},
+		Routing: yamlRouting{
+			SameCity:      cfg.Routing.SameCity,
+			DifferentCity: cfg.Routing.DifferentCity,
+			Fallback:      cfg.Routing.Fallback,
+		},
+	}
+	return yaml.Marshal(y)
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
