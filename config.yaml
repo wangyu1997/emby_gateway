@@ -1,0 +1,21 @@
+server:
+  port: 8095                       # 代理服务端口（Emby 客户端访问）
+  admin_port: 8098                 # 管理后台端口（浏览器访问）
+  secret: "change-me-to-a-random-string"
+
+emby:
+  url: "http://127.0.0.1:8096"
+  api_key: "your_emby_api_key"
+
+geoip:
+  db_path: "./GeoLite2-City.mmdb"
+  server_city: "北京"
+  auto_download: true            # 启动时自动下载（如果本地不存在）
+  auto_update: "24h"             # 定时更新间隔，设为 0 禁用
+  api_fallback_url: ""           # HTTP API 备用查询（本地 DB 失败时使用）
+  ip_cache_ttl: "1h"             # IP 查询结果缓存时间（同一 IP 不再重复查询）
+
+routing:
+  same_city: "redirect"          # 同城策略：302 直链
+  different_city: "proxy"        # 异地策略：本地代理
+  fallback: "proxy"              # 无法识别 IP 时
