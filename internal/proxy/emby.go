@@ -372,10 +372,11 @@ func (p *EmbyProxy) forwardToEmby(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *EmbyProxy) handleWebPage(w http.ResponseWriter, r *http.Request) {
+	if !p.cfg.Tweaks.HidePremiere {
+		p.forwardToEmby(w, r)
+		return
+	}
 	p.forwardToEmbyBuffered(w, r, func(body []byte) []byte {
-		if !p.cfg.Tweaks.HidePremiere {
-			return body
-		}
 		inject := `<style>
 .btnPremiere,[class*="btnPremiere"],[data-id="premiere"],.card-premiere,.section-premiere,
 [class*="card-premiere"],[class*="section-premiere"],.dashboardFooter,
@@ -392,14 +393,25 @@ func (p *EmbyProxy) forwardToEmbyBuffered(w http.ResponseWriter, r *http.Request
 		embyURL += "?" + r.URL.RawQuery
 	}
 
-	forwardReq, err := http.NewRequest(r.Method, embyURL, r.Body)
+	// GET 请求不需要 body
+	var bodyReader io.Reader
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		bodyReader = r.Body
+	}
+
+	forwardReq, err := http.NewRequest(r.Method, embyURL, bodyReader)
 	if err != nil {
+		log.Printf("forwardToEmbyBuffered: create request error: %v", err)
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 		return
 	}
 	forwardReq.Header = r.Header.Clone()
 
-	if forwardReq.ContentLength <= 0 && r.ContentLength > 0 {
+	// 关键：删除 Accept-Encoding，让 Go 自动解压 gzip
+	// 如果保留原始请求的 Accept-Encoding，Go 不会自动解压
+	forwardReq.Header.Del("Accept-Encoding")
+
+	if r.ContentLength > 0 {
 		forwardReq.ContentLength = r.ContentLength
 	}
 
@@ -418,12 +430,17 @@ func (p *EmbyProxy) forwardToEmbyBuffered(w http.ResponseWriter, r *http.Request
 	forwardReq.Header.Set("X-Forwarded-Proto", scheme(r))
 	forwardReq.Header.Set("X-Forwarded-Host", r.Host)
 
+	log.Printf("forwardToEmbyBuffered: GET %s", embyURL)
+
 	resp, err := p.client.Do(forwardReq)
 	if err != nil {
+		log.Printf("forwardToEmbyBuffered: request error: %v", err)
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
+
+	log.Printf("forwardToEmbyBuffered: upstream status=%d content-type=%s", resp.StatusCode, resp.Header.Get("Content-Type"))
 
 	for k, v := range resp.Header {
 		w.Header()[k] = v
@@ -431,10 +448,12 @@ func (p *EmbyProxy) forwardToEmbyBuffered(w http.ResponseWriter, r *http.Request
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
+		log.Printf("forwardToEmbyBuffered: read error: %v", err)
+		w.WriteHeader(http.StatusBadGateway)
 		return
 	}
+
+	log.Printf("forwardToEmbyBuffered: read %d bytes, transforming", len(respBody))
 
 	respBody = transform(respBody)
 	w.WriteHeader(resp.StatusCode)
