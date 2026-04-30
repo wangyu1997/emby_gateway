@@ -247,8 +247,9 @@ func (p *EmbyProxy) handlePlaying(w http.ResponseWriter, r *http.Request) {
 			p.forwardToEmby(w, r)
 			return
 		}
-		// 恢复 Body 供后续转发使用
+		// 恢复 Body 和 ContentLength 供后续转发使用
 		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		r.ContentLength = int64(len(bodyBytes))
 
 		var body map[string]interface{}
 		json.Unmarshal(bodyBytes, &body)
@@ -289,6 +290,19 @@ func (p *EmbyProxy) forwardToEmby(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	forwardReq.Header = r.Header.Clone()
+
+	// 手动设置 ContentLength，确保 body 正确发送
+	if forwardReq.ContentLength <= 0 && r.ContentLength > 0 {
+		forwardReq.ContentLength = r.ContentLength
+	}
+
+	// 确保 POST 请求使用 application/json，避免 Emby 拒绝解析 text/plain
+	if r.Method == http.MethodPost {
+		ct := forwardReq.Header.Get("Content-Type")
+		if ct == "" || strings.HasPrefix(ct, "text/plain") {
+			forwardReq.Header.Set("Content-Type", "application/json")
+		}
+	}
 
 	// 修正 Host 头为 Emby 实际地址
 	embyHost := strings.TrimPrefix(p.cfg.Emby.URL, "http://")
