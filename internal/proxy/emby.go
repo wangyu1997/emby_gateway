@@ -271,10 +271,16 @@ func (p *EmbyProxy) forwardToEmby(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	forwardReq.Header = r.Header.Clone()
-	// 修正 Host 头为 Emby 实际地址，避免 Emby 返回错误的资源路径
+
+	// 修正 Host 头为 Emby 实际地址
 	embyHost := strings.TrimPrefix(p.cfg.Emby.URL, "http://")
 	embyHost = strings.TrimPrefix(embyHost, "https://")
 	forwardReq.Host = embyHost
+
+	// 添加代理转发标准头，Emby 依赖这些头构造正确的资源 URL
+	forwardReq.Header.Set("X-Forwarded-For", extractClientIP(r))
+	forwardReq.Header.Set("X-Forwarded-Proto", scheme(r))
+	forwardReq.Header.Set("X-Forwarded-Host", r.Host)
 
 	resp, err := p.client.Do(forwardReq)
 	if err != nil {
@@ -288,6 +294,13 @@ func (p *EmbyProxy) forwardToEmby(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+}
+
+func scheme(r *http.Request) string {
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
 }
 
 func (p *EmbyProxy) makeRoutingDecision(r *http.Request, clientIP string) *routingDecision {
