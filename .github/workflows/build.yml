@@ -5,6 +5,9 @@ on:
     tags: ['v*']
     branches: [main]
 
+env:
+  DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/emby302
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -32,7 +35,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: emby302/emby302
+          images: ${{ env.DOCKER_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

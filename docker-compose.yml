@@ -1,6 +1,6 @@
 services:
   emby302:
-    image: emby302/emby302:latest
+    image: ${DOCKERHUB_USERNAME:-your-username}/emby302:latest
     restart: unless-stopped
     ports:
       - "8095:8095"
