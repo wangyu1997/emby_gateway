@@ -246,9 +246,17 @@ func (p *EmbyProxy) handleProxyStream(w http.ResponseWriter, r *http.Request) {
 	}
 	defer proxyResp.Body.Close()
 
+	// 先复制上游响应头，再设置 CORS 头（确保不被覆盖）
 	for k, v := range proxyResp.Header {
 		w.Header()[k] = v
 	}
+
+	// 设置 CORS 头，允许浏览器跨域播放
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Range, Content-Type")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Range, Content-Type, Accept-Ranges")
+
 	w.WriteHeader(proxyResp.StatusCode)
 
 	io.Copy(w, proxyResp.Body)
