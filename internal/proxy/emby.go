@@ -271,6 +271,10 @@ func (p *EmbyProxy) forwardToEmby(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	forwardReq.Header = r.Header.Clone()
+	// 修正 Host 头为 Emby 实际地址，避免 Emby 返回错误的资源路径
+	embyHost := strings.TrimPrefix(p.cfg.Emby.URL, "http://")
+	embyHost = strings.TrimPrefix(embyHost, "https://")
+	forwardReq.Host = embyHost
 
 	resp, err := p.client.Do(forwardReq)
 	if err != nil {

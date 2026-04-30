@@ -229,9 +229,9 @@ func yamlMarshal(cfg *config.Config) ([]byte, error) {
 			DBPath:         cfg.GeoIP.DBPath,
 			ServerCity:     cfg.GeoIP.ServerCity,
 			AutoDownload:   cfg.GeoIP.AutoDownload,
-			AutoUpdate:     cfg.GeoIP.AutoUpdate.String(),
+			AutoUpdate:     cfg.GeoIP.AutoUpdate,
 			APIFallbackURL: cfg.GeoIP.APIFallbackURL,
-			IPCacheTTL:     cfg.GeoIP.IPCacheTTL.String(),
+			IPCacheTTL:     cfg.GeoIP.IPCacheTTL,
 		},
 		Routing: yamlRouting{
 			SameCity:      cfg.Routing.SameCity,

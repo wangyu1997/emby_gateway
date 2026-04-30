@@ -28,14 +28,15 @@ func main() {
 	}
 
 	autoDownload := cfg.GeoIP.AutoDownload
-	updateInterval := cfg.GeoIP.AutoUpdate
+	updateInterval := cfg.GeoIP.AutoUpdateDuration()
+	ipCacheTTL := cfg.GeoIP.IPCacheTTLDuration()
 
 	dbPath := cfg.GeoIP.DBPath
 	if !filepath.IsAbs(dbPath) {
 		dbPath = filepath.Join(*dataDir, dbPath)
 	}
 
-	g, err := geoip.New(dbPath, cfg.GeoIP.ServerCity, autoDownload, updateInterval, cfg.GeoIP.IPCacheTTL)
+	g, err := geoip.New(dbPath, cfg.GeoIP.ServerCity, autoDownload, updateInterval, ipCacheTTL)
 	if err != nil {
 		log.Printf("初始化 GeoIP 失败: %v（代理将继续启动，GeoIP 将使用兜底策略）", err)
 		// GeoIP 失败不影响代理启动
