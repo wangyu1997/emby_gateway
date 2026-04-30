@@ -25,7 +25,7 @@ import (
 type EmbyProxy struct {
 	cfg    *config.Config
 	geoip  *geoip.GeoIP
-	client *http.Client
+	client *http.Client // 用于 Emby 转发（不跟随重定向）
 	pCache *cache.Cache
 
 	// 客户端连接追踪
@@ -49,11 +49,16 @@ func New(cfg *config.Config, g *geoip.GeoIP) *EmbyProxy {
 		cfg:    cfg,
 		geoip:  g,
 		client: &http.Client{Timeout: 60 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse // 不自动跟随重定向，透传给浏览器
+			return http.ErrUseLastResponse
 		}},
 		pCache:   cache.New(5*time.Minute, 10*time.Minute),
 		trackers: make(map[string]*ClientTracker),
 	}
+}
+
+// streamClient 用于代理流，自动跟随重定向
+func (p *EmbyProxy) streamClient() *http.Client {
+	return &http.Client{Timeout: 60 * time.Second}
 }
 
 func (p *EmbyProxy) GetTrackers() []ClientTracker {
@@ -224,7 +229,7 @@ func (p *EmbyProxy) handleProxyStream(w http.ResponseWriter, r *http.Request) {
 	}
 	proxyReq.Header.Set("User-Agent", "Mozilla/5.0")
 
-	proxyResp, err := p.client.Do(proxyReq)
+	proxyResp, err := p.streamClient().Do(proxyReq)
 	if err != nil {
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 		return
@@ -296,7 +301,7 @@ func (p *EmbyProxy) forwardToEmby(w http.ResponseWriter, r *http.Request) {
 		forwardReq.ContentLength = r.ContentLength
 	}
 
-	// 确保 POST 请求使用 application/json，避免 Emby 拒绝解析 text/plain
+	// 确保 POST 请求使用 application/json，避免 Sessions/Playing 返回 400
 	if r.Method == http.MethodPost {
 		ct := forwardReq.Header.Get("Content-Type")
 		if ct == "" || strings.HasPrefix(ct, "text/plain") {
